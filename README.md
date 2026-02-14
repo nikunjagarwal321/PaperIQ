@@ -32,8 +32,56 @@ This system enables users to:
 
 ---
 
+## 📋 Methodology
 
-## Method 1: Using the Setup Script 
+The system follows a **Retrieval-Augmented Generation (RAG)** pipeline with two main phases: **Uploading** and **Querying**.
+
+![Methodology flowchart](Methodology.png)
+
+### Uploading Phase
+
+1. **Document Extraction** — PDFs are parsed with PyPDFLoader; text and metadata (title, page count) are extracted from each page.
+2. **Text Cleaning** — Raw text is preprocessed: special characters, headers, footers, page numbers, and stop words are removed via regex and NLTK.
+3. **Section Segmentation** — Cleaned text is split into logical sections (Abstract, Introduction, Methodology, Results, Conclusion, References) by detecting section headers with regex.
+4. **Chunking** — Each section is split into overlapping chunks (1000 characters, 40-character overlap) using `RecursiveCharacterTextSplitter` to preserve context across boundaries.
+5. **Embedding Generation** — Each chunk is converted to a 384-dimensional vector using `all-MiniLM-L6-v2`.
+6. **Indexing** — Embeddings and metadata (section, title, source) are stored in a Pinecone vector index for similarity search.
+
+### Querying Phase
+
+1. **Query Input** — The user submits a natural language question via the web UI.
+2. **Query Embedding** — The query is embedded with the same model as document chunks so both live in the same semantic space.
+3. **Similarity Search** — Cosine similarity in Pinecone retrieves the **top 5** most relevant chunks.
+4. **Contextual Answer Generation** — Retrieved chunks are passed to Gemini 1.5 Pro as context; the LLM synthesizes a concise answer using only this context.
+5. **Response Delivery** — The answer and supporting chunks are returned so users can trace and verify sources.
+
+---
+
+## ⚙️ Implementation
+
+### Architecture
+
+| Component | Technology |
+|-----------|------------|
+| **Vector DB** | Pinecone (serverless, AWS, cosine similarity) |
+| **Embeddings** | `sentence-transformers/all-MiniLM-L6-v2` (384-dim) |
+| **LLM** | Google Gemini 1.5 Pro (temperature=0.3 for factual answers) |
+| **Framework** | LangChain (document loading, splitting, chains) |
+| **Web Server** | Flask |
+
+### Core Modules
+
+- **`upload_file.py`** — Loads PDFs, cleans text, segments by section, chunks, generates embeddings, and indexes into Pinecone.
+- **`query_engine.py`** — Embeds the query, retrieves top‑5 chunks from Pinecone, and runs the RAG chain with Gemini.
+- **`server.py`** — Flask app exposing `/upload` and `/query` endpoints and serving the web UI.
+
+### RAG Pipeline
+
+The retriever uses `search_type="similarity"` with `k=5`. Retrieved chunks are fed to a prompt instructing the LLM to use only the provided context, answer in up to three sentences, and say when the answer is unknown. Both the generated answer and source chunks are returned for transparency.
+
+---
+
+## Method 1: Using the Setup Script
 
 ```bash
 chmod +x run_app.sh
